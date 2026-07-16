@@ -79,3 +79,10 @@ if __name__ == "__main__":
     for d in embedding_details:
         status = "✅" if d["hit"] else "❌"
         print(f"{status} {d['query']}")
+
+    hybrid_score, hybrid_details = evaluate_recall_at_5(hybrid_retrieval, chunks)
+    print(f"\nHybrid Recall@5: {hybrid_score:.2%}\n")
+
+    # for d in hybrid_details:
+    #     status = "✅" if d["hit"] else "❌"
+    #     print(f"{status} {d['query']}")
