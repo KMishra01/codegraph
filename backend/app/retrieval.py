@@ -1,4 +1,7 @@
 from rank_bm25 import BM25Okapi
+from app.vector_store import vector_retrieval
+
+
 
 def tokenize(text):
     """
@@ -39,7 +42,7 @@ def bm25_retrieval(query, chunks, top_k=5):
     return [c for c, score in scored_chunks[:top_k]]
 
 
-from embedder import get_embedding
+from app.embeddings import get_embedding
 import math
 
 
@@ -55,18 +58,10 @@ def cosine_similarity(vec_a, vec_b):
 def embedding_retrieval(query, chunks, top_k=5):
     """
     Same interface as baseline_retrieval / bm25_retrieval.
-    Embeds the query and every chunk, ranks by cosine similarity.
+    Now uses Chroma's pre-indexed embeddings instead of live-embedding
+    every chunk on every call — fast and consistent.
     """
-    query_embedding = get_embedding(query)
-
-    scored_chunks = []
-    for c in chunks:
-        chunk_embedding = get_embedding(c["code"])
-        score = cosine_similarity(query_embedding, chunk_embedding)
-        scored_chunks.append((c, score))
-
-    scored_chunks.sort(key=lambda x: x[1], reverse=True)
-    return [c for c, score in scored_chunks[:top_k]]
+    return vector_retrieval(query, top_k=top_k)
 
 def normalize_scores(scored_list):
     """
@@ -85,7 +80,7 @@ def hybrid_retrieval(query, chunks, top_k=5, bm25_weight=0.5):
     Combines BM25 and embedding scores into one ranked list.
     bm25_weight controls the balance (0.5 = equal weight to both).
     """
-    # --- BM25 scoring ---
+    
     bm25 = build_bm25_index(chunks)
     tokenized_query = tokenize(query)
     bm25_raw_scores = bm25.get_scores(tokenized_query)
@@ -94,26 +89,33 @@ def hybrid_retrieval(query, chunks, top_k=5, bm25_weight=0.5):
     bm25_scores_by_id = {chunk_id(c): s for c, s in bm25_normalized}
 
     # --- Embedding scoring ---
-    query_embedding = get_embedding(query)
-    embed_scored = []
-    for c in chunks:
-        chunk_embedding = get_embedding(c["code"])
-        score = cosine_similarity(query_embedding, chunk_embedding)
-        embed_scored.append((c, score))
-    embed_normalized = normalize_scores(embed_scored)
-    embed_scores_by_id = {chunk_id(c): s for c, s in embed_normalized}
+    # query_embedding = get_embedding(query)
+    # embed_scored = []
+    # for c in chunks:
+    #     chunk_embedding = get_embedding(c["code"])
+    #     score = cosine_similarity(query_embedding, chunk_embedding)
+    #     embed_scored.append((c, score))
+    # embed_normalized = normalize_scores(embed_scored)
+    # embed_scores_by_id = {chunk_id(c): s for c, s in embed_normalized}
+    vector_candidates = vector_retrieval(query, top_k=20)
+    embed_scores_by_id = {}
+    for rank, c in enumerate(vector_candidates):
+        cid = chunk_id(c)
+        # Convert rank position into a 0-1 score: best match = 1.0, worst = close to 0
+        embed_scores_by_id[cid] = 1 - (rank / len(vector_candidates))
+
 
     # --- Combine ---
     combined = []
     for c in chunks:
         cid = chunk_id(c)
-        final_score = (bm25_weight * bm25_scores_by_id[cid]) + \
-                      ((1 - bm25_weight) * embed_scores_by_id[cid])
+        bm25_score = bm25_scores_by_id.get(cid, 0)
+        embed_score = embed_scores_by_id.get(cid, 0)  # 0 if not in Chroma's top 20
+        final_score = (bm25_weight * bm25_score) + ((1 - bm25_weight) * embed_score)
         combined.append((c, final_score))
 
     combined.sort(key=lambda x: x[1], reverse=True)
     return [c for c, score in combined[:top_k]]
-
 
 def chunk_id(chunk):
     return f"{chunk['file_path']}::{chunk['symbol_name']}"

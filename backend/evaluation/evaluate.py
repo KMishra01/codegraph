@@ -1,7 +1,5 @@
-from eval_set import test_set
-from search import bm25_retrieval
-from search import embedding_retrieval
-from search import hybrid_retrieval
+from evaluation.eval_set import test_set
+from app.retrieval import bm25_retrieval, embedding_retrieval, hybrid_retrieval
 def chunk_id(chunk):
     """Turns a chunk dict into the same 'file.py::symbol' string format used in eval_set.py"""
     return f"{chunk['file_path']}::{chunk['symbol_name']}"
@@ -44,16 +42,16 @@ def baseline_retrieval(query, chunks, top_k=5):
     return (important + others)[:top_k]
 
 if __name__ == "__main__":
-    from chunker import chunk_file_list
+    from app.chunking import chunk_file_list
 
     with open("main.py", "r") as f:
         main_content = f.read()
-    with open("chunker.py", "r") as f:
+    with open("app/chunking.py", "r") as f:
         chunker_content = f.read()
 
     files = [
         {"file_path": "main.py", "content": main_content},
-        {"file_path": "chunker.py", "content": chunker_content},
+        {"file_path": "app/chunking.py", "content": chunker_content},
     ]
 
     chunks = chunk_file_list(files)
